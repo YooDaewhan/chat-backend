@@ -13,8 +13,12 @@ const io = new Server(server, {
 let connectedUsers = 0;
 
 io.on("connection", (socket) => {
+  connectedUsers++;
+  console.log("🔌 유저 접속됨:", socket.id, "현재 접속자 수:", connectedUsers);
+
+  // IP 가져오기 (아래 참고)
   const ip = socket.handshake.address;
-  console.log("🔌 유저 접속됨:", socket.id, "IP:", ip);
+  console.log("접속 IP:", ip);
 
   socket.on("chat message", (msg) => {
     console.log("📩 받은 메시지:", msg, "from IP:", ip);
@@ -22,7 +26,13 @@ io.on("connection", (socket) => {
   });
 
   socket.on("disconnect", () => {
-    console.log("❌ 유저 연결 해제:", socket.id, "IP:", ip);
+    connectedUsers--;
+    console.log(
+      "❌ 유저 연결 해제:",
+      socket.id,
+      "현재 접속자 수:",
+      connectedUsers
+    );
   });
 });
 
