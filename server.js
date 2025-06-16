@@ -10,17 +10,19 @@ const io = new Server(server, {
     origin: "*", // 모든 프론트엔드에서 접속 허용 (개발용)
   },
 });
+let connectedUsers = 0;
 
 io.on("connection", (socket) => {
-  console.log("🔌 유저 접속됨:", socket.id);
+  const ip = socket.handshake.address;
+  console.log("🔌 유저 접속됨:", socket.id, "IP:", ip);
 
   socket.on("chat message", (msg) => {
-    console.log("📩 받은 메시지:", msg);
+    console.log("📩 받은 메시지:", msg, "from IP:", ip);
     io.emit("chat message", msg);
   });
 
   socket.on("disconnect", () => {
-    console.log("❌ 유저 연결 해제:", socket.id);
+    console.log("❌ 유저 연결 해제:", socket.id, "IP:", ip);
   });
 });
 
