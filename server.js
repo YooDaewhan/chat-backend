@@ -34,7 +34,10 @@ io.on("connection", (socket) => {
       hostId = socket.id;
     }
 
-    io.emit("user list", Object.values(users));
+    io.emit("user list", {
+      users: Object.values(users),
+      hostNickname: users[hostId]?.nickname || null,
+    });
     io.emit("user count", Object.keys(users).length);
     socket.emit("host status", { isHost: socket.id === hostId });
   });
@@ -126,12 +129,19 @@ io.on("connection", (socket) => {
         color: "#007bff",
         message: `${targetNick}님이 방장이 되었습니다.`,
       });
+      io.emit("user list", {
+        users: Object.values(users),
+        hostNickname: users[hostId]?.nickname || null,
+      });
     }
   });
 
   socket.on("disconnect", () => {
     delete users[socket.id];
-    io.emit("user list", Object.values(users));
+    io.emit("user list", {
+      users: Object.values(users),
+      hostNickname: users[hostId]?.nickname || null,
+    });
     io.emit("user count", Object.keys(users).length);
 
     if (socket.id === hostId) {
