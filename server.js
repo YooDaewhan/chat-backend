@@ -21,7 +21,7 @@ io.on("connection", (socket) => {
   io.emit("user count", connectedUsers);
 
   socket.on("chat message", (msg) => {
-    console.log("📩 받은 메시지:", msg);
+    console.log("📩 받은 메시지:", msg, socket.id);
     io.emit("chat message", msg);
   });
 
