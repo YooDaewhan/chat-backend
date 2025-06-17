@@ -10,82 +10,127 @@ const io = new Server(server, {
   },
 });
 
-const users = {}; // socket.id -> { nickname, color }
-const bannedNicknames = new Set();
-let quizzes = []; // { question, answer, solved, solver, solvedAt, timer }
+let users = {}; // socket.id -> {nickname, color}
 let scores = {}; // nickname -> score
+let bannedNicknames = new Set();
 let hostId = null;
 
-const QUIZ_TIME_LIMIT = 20 * 1000; // 20초
+let quizHistory = [];
+let quizCounter = 0;
 
 io.on("connection", (socket) => {
-  const ip = socket.handshake.address;
-
-  socket.on("force host", () => {
-    const user = users[socket.id];
-    if (!user) return;
-
-    // 방장 강제 변경
-    hostId = socket.id;
-
-    // 방장 상태 갱신
-    io.to(hostId).emit("host status", { isHost: true });
-    for (const id in users) {
-      if (id !== hostId) {
-        io.to(id).emit("host status", { isHost: false });
-      }
-    }
-
-    // 유저 리스트 갱신
+  const sendUserList = () => {
     io.emit("user list", {
       users: Object.values(users),
-      hostNickname: user.nickname,
+      hostNickname: users[hostId]?.nickname || null,
     });
+  };
 
-    console.log(`[방장 강제 설정] ${user.nickname}`);
-  });
-
+  // 닉네임 설정
   socket.on("set nickname", ({ nickname, color }) => {
     /*if (bannedNicknames.has(nickname)) {
       socket.emit("banned", "해당 닉네임은 차단되었습니다.");
       socket.disconnect();
       return;
-    }*/
-
+    }
+    */
     users[socket.id] = { nickname, color };
 
+    // 방장 지정
     if (!hostId) {
       hostId = socket.id;
     }
-
-    io.emit("user list", {
-      users: Object.values(users),
-      hostNickname: users[hostId]?.nickname || null,
-    });
-    io.emit("user count", Object.keys(users).length);
     socket.emit("host status", { isHost: socket.id === hostId });
+
+    sendUserList();
+    io.emit("user count", Object.keys(users).length);
   });
 
+  // 퀴즈 출제
+  socket.on("quiz new", ({ question, answer }) => {
+    if (socket.id !== hostId) return;
+
+    quizCounter += 1;
+    const quiz = {
+      id: quizCounter,
+      question,
+      answer: answer.trim().toLowerCase(),
+      solved: false,
+      createdAt: Date.now(),
+      timeout: Date.now() + 30 * 1000,
+    };
+    quizHistory.push(quiz);
+
+    io.emit("chat message", {
+      nickname: `[문제${quiz.id}]`,
+      color: "#d9534f",
+      message: question,
+    });
+
+    // 현재 미해결 문제 목록 전송
+    io.emit(
+      "active quizzes",
+      quizHistory.filter((q) => !q.solved)
+    );
+
+    // 타이머 종료 처리
+    setTimeout(() => {
+      if (!quiz.solved) {
+        quiz.solved = true;
+        io.emit("chat message", {
+          nickname: "[시스템]",
+          color: "#888",
+          message: `[문제${quiz.id}] 시간 초과! 정답: ${quiz.answer}`,
+        });
+        io.emit(
+          "active quizzes",
+          quizHistory.filter((q) => !q.solved)
+        );
+      }
+    }, 30 * 1000);
+  });
+
+  // 채팅 메시지
   socket.on("chat message", (msg) => {
-    const user = users[socket.id];
-    if (!user) return;
-
+    const user = users[socket.id] || { nickname: "익명", color: "#000000" };
     const trimmed = msg.trim().toLowerCase();
-    const matchingQuiz = quizzes.find((q) => !q.solved && q.answer === trimmed);
 
-    if (matchingQuiz) {
-      matchingQuiz.solved = true;
-      matchingQuiz.solver = user.nickname;
-      matchingQuiz.solvedAt = new Date().toISOString();
+    // /방장 → 방장 강제 요청
+    if (msg.trim() === "/방장") {
+      hostId = socket.id;
+      io.to(socket.id).emit("host status", { isHost: true });
+      sendUserList();
+      return;
+    }
+
+    // 정답 처리
+    const unsolved = quizHistory.find((q) => !q.solved && trimmed === q.answer);
+    if (unsolved) {
+      unsolved.solved = true;
       scores[user.nickname] = (scores[user.nickname] || 0) + 1;
 
       io.emit("quiz correct", {
         nickname: user.nickname,
         color: user.color,
-        question: matchingQuiz.question,
+        answer: unsolved.answer,
+        questionId: unsolved.id,
       });
 
-      broadcastLeaderboard();
+      io.emit(
+        "active quizzes",
+        quizHistory.filter((q) => !q.solved)
+      );
+
+      // 순위 정렬
+      const ranks = Object.entries(scores)
+        .map(([name, score]) => ({ name, score }))
+        .sort((a, b) => b.score - a.score)
+        .map((entry, i, arr) => {
+          const same = arr.filter((e) => e.score === entry.score).length;
+          return { ...entry, rank: same > 1 ? "공동" : i + 1 };
+        });
+
+      io.emit("quiz leaderboard", ranks);
     } else {
       io.emit("chat message", {
         nickname: user.nickname,
@@ -95,103 +140,52 @@ io.on("connection", (socket) => {
     }
   });
 
-  socket.on("quiz new", ({ question, answer }) => {
+  // 유저 킥
+  socket.on("kick user", (targetNickname) => {
     if (socket.id !== hostId) return;
 
-    const newQuiz = {
-      question,
-      answer: answer.trim().toLowerCase(),
-      solved: false,
-    };
-
-    quizzes.push(newQuiz);
-
-    io.emit("chat message", {
-      nickname: "[문제]",
-      color: "#d9534f",
-      message: question,
-    });
-
-    setTimeout(() => {
-      if (!newQuiz.solved) {
-        newQuiz.solved = true;
-        io.emit("chat message", {
-          nickname: "[시간초과]",
-          color: "#999",
-          message: `문제 [${question}] 시간이 초과되었습니다.`,
-        });
-      }
-    }, QUIZ_TIME_LIMIT);
-  });
-
-  socket.on("kick user", (targetNick) => {
-    if (socket.id !== hostId) return;
-
-    const targetEntry = Object.entries(users).find(
-      ([, u]) => u.nickname === targetNick
-    );
-    if (targetEntry) {
-      const [targetSocketId] = targetEntry;
-      bannedNicknames.add(targetNick);
-      io.to(targetSocketId).emit("kick");
-      io.sockets.sockets.get(targetSocketId)?.disconnect();
+    const targetId = Object.entries(users).find(
+      ([id, u]) => u.nickname === targetNickname
+    )?.[0];
+    if (targetId) {
+      bannedNicknames.add(targetNickname);
+      io.to(targetId).emit("kick");
+      io.sockets.sockets.get(targetId)?.disconnect();
     }
   });
 
-  socket.on("delegate host", (targetNick) => {
+  // 방장 위임
+  socket.on("delegate host", (targetNickname) => {
     if (socket.id !== hostId) return;
 
-    const targetEntry = Object.entries(users).find(
-      ([, u]) => u.nickname === targetNick
-    );
-    if (targetEntry) {
-      const [targetSocketId] = targetEntry;
-      hostId = targetSocketId;
-      io.to(targetSocketId).emit("host status", { isHost: true });
-      io.emit("chat message", {
-        nickname: "[시스템]",
-        color: "#007bff",
-        message: `${targetNick}님이 방장이 되었습니다.`,
-      });
-      io.emit("user list", {
-        users: Object.values(users),
-        hostNickname: users[hostId]?.nickname || null,
-      });
+    const targetId = Object.entries(users).find(
+      ([id, u]) => u.nickname === targetNickname
+    )?.[0];
+    if (targetId) {
+      hostId = targetId;
+      io.to(targetId).emit("host status", { isHost: true });
+      sendUserList();
     }
   });
 
+  // 강제 방장 가져오기
+  socket.on("force host", () => {
+    hostId = socket.id;
+    io.to(socket.id).emit("host status", { isHost: true });
+    sendUserList();
+  });
+
+  // 연결 종료
   socket.on("disconnect", () => {
     delete users[socket.id];
-    io.emit("user list", {
-      users: Object.values(users),
-      hostNickname: users[hostId]?.nickname || null,
-    });
-    io.emit("user count", Object.keys(users).length);
-
     if (socket.id === hostId) {
-      const remainingIds = Object.keys(users);
-      hostId = remainingIds.length > 0 ? remainingIds[0] : null;
-      if (hostId) {
-        io.to(hostId).emit("host status", { isHost: true });
-      }
+      hostId = Object.keys(users)[0] || null;
     }
+    sendUserList();
+    io.emit("user count", Object.keys(users).length);
   });
 });
 
-function broadcastLeaderboard() {
-  const sorted = Object.entries(scores)
-    .map(([name, score]) => ({ name, score }))
-    .sort((a, b) => b.score - a.score);
-
-  const withRank = sorted.map((entry, i) => {
-    const sameScoreCount = sorted.filter((e) => e.score === entry.score).length;
-    const rank = sorted.findIndex((e) => e.score === entry.score) + 1;
-    return { ...entry, rank };
-  });
-
-  io.emit("quiz leaderboard", withRank);
-}
-
 server.listen(3001, () => {
-  console.log("✅ 서버 실행 중 http://localhost:3001");
+  console.log("✅ 서버 실행 중: http://localhost:3001");
 });
