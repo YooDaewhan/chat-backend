@@ -111,6 +111,24 @@ io.on("connection", (socket) => {
     }
   });
 
+  socket.on("delegate host", (targetNick) => {
+    if (socket.id !== hostId) return;
+
+    const targetEntry = Object.entries(users).find(
+      ([, u]) => u.nickname === targetNick
+    );
+    if (targetEntry) {
+      const [targetSocketId] = targetEntry;
+      hostId = targetSocketId;
+      io.to(targetSocketId).emit("host status", { isHost: true });
+      io.emit("chat message", {
+        nickname: "[시스템]",
+        color: "#007bff",
+        message: `${targetNick}님이 방장이 되었습니다.`,
+      });
+    }
+  });
+
   socket.on("disconnect", () => {
     delete users[socket.id];
     io.emit("user list", Object.values(users));
