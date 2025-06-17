@@ -15,6 +15,7 @@ io.on("connection", (socket) => {
       solved: false,
     };
     const user = users[socket.id];
+    console.log("📢 문제 출제:", question, "/ 정답:", currentQuiz.answer); // 🔍 추가
     io.emit("chat message", {
       nickname: "[문제]",
       color: "#d9534f",
