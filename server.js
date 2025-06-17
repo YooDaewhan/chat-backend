@@ -1,3 +1,16 @@
+const express = require("express");
+const http = require("http");
+const { Server } = require("socket.io");
+
+const app = express();
+const server = http.createServer(app);
+const io = new Server(server, {
+  cors: {
+    origin: "*",
+  },
+});
+
+const users = {}; // ✅ 반드시 선언 필요
 let currentQuiz = null;
 
 io.on("connection", (socket) => {
@@ -7,7 +20,6 @@ io.on("connection", (socket) => {
     io.emit("user count", Object.keys(users).length);
   });
 
-  // 문제 출제
   socket.on("quiz new", ({ question, answer }) => {
     currentQuiz = {
       question,
@@ -15,7 +27,7 @@ io.on("connection", (socket) => {
       solved: false,
     };
     const user = users[socket.id];
-    console.log("📢 문제 출제:", question, "/ 정답:", currentQuiz.answer); // 🔍 추가
+    console.log("📢 문제 출제:", question, "/ 정답:", currentQuiz.answer);
     io.emit("chat message", {
       nickname: "[문제]",
       color: "#d9534f",
@@ -23,7 +35,6 @@ io.on("connection", (socket) => {
     });
   });
 
-  // 채팅 메시지
   socket.on("chat message", (msg) => {
     const user = users[socket.id] || { nickname: "익명", color: "#000000" };
     const trimmed = msg.trim().toLowerCase();
@@ -48,4 +59,8 @@ io.on("connection", (socket) => {
     io.emit("user list", Object.values(users));
     io.emit("user count", Object.keys(users).length);
   });
+});
+
+server.listen(3001, () => {
+  console.log("✅ 서버 실행 중: http://localhost:3001");
 });
