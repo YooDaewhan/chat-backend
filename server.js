@@ -45,8 +45,8 @@ io.on("connection", (socket) => {
     console.log(`[방장 강제 설정] ${user.nickname}`);
   });
 
-  /*socket.on("set nickname", ({ nickname, color }) => {
-    if (bannedNicknames.has(nickname)) {
+  socket.on("set nickname", ({ nickname, color }) => {
+    /*if (bannedNicknames.has(nickname)) {
       socket.emit("banned", "해당 닉네임은 차단되었습니다.");
       socket.disconnect();
       return;
