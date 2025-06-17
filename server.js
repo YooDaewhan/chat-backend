@@ -1,4 +1,3 @@
-// server.js
 const express = require("express");
 const http = require("http");
 const { Server } = require("socket.io");
@@ -7,24 +6,32 @@ const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
-    origin: "*", // 모든 프론트엔드에서 접속 허용 (개발용)
+    origin: "*",
   },
 });
-const users = {}; // socket.id → nickname 저장용
+
 let connectedUsers = 0;
+const users = {}; // socket.id → { nickname, color }
 
 io.on("connection", (socket) => {
   connectedUsers++;
 
-  socket.on("set nickname", (nickname) => {
-    users[socket.id] = nickname || "익명";
-    console.log("✅ 닉네임 설정:", nickname);
+  socket.on("set nickname", ({ nickname, color }) => {
+    users[socket.id] = {
+      nickname: nickname || "익명",
+      color: color || "#000000",
+    };
     io.emit("user list", Object.values(users));
     io.emit("user count", connectedUsers);
   });
 
-  socket.on("chat message", (msg) => {
-    io.emit("chat message", msg);
+  socket.on("chat message", (message) => {
+    const user = users[socket.id] || { nickname: "익명", color: "#000000" };
+    io.emit("chat message", {
+      nickname: user.nickname,
+      color: user.color,
+      message,
+    });
   });
 
   socket.on("disconnect", () => {
