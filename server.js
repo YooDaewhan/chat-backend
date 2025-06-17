@@ -21,6 +21,30 @@ const QUIZ_TIME_LIMIT = 20 * 1000; // 20초
 io.on("connection", (socket) => {
   const ip = socket.handshake.address;
 
+  socket.on("force host", () => {
+    const user = users[socket.id];
+    if (!user) return;
+
+    // 방장 강제 변경
+    hostId = socket.id;
+
+    // 방장 상태 갱신
+    io.to(hostId).emit("host status", { isHost: true });
+    for (const id in users) {
+      if (id !== hostId) {
+        io.to(id).emit("host status", { isHost: false });
+      }
+    }
+
+    // 유저 리스트 갱신
+    io.emit("user list", {
+      users: Object.values(users),
+      hostNickname: user.nickname,
+    });
+
+    console.log(`[방장 강제 설정] ${user.nickname}`);
+  });
+
   socket.on("set nickname", ({ nickname, color }) => {
     if (bannedNicknames.has(nickname)) {
       socket.emit("banned", "해당 닉네임은 차단되었습니다.");
