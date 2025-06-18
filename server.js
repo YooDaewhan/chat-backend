@@ -14,20 +14,25 @@ let quizHistory = []; // {id, question, answer, solved, ...}
 let quizCounter = 0;
 let hostId = null;
 
+function sendUserList() {
+  io.emit("user list", users);
+  io.emit("host status", { hostId });
+}
+
 io.on("connection", (socket) => {
-  // 닉네임/색상 설정 및 초기화
+  // 닉네임/색상 설정 및 최초 입장
   socket.on("set nickname", ({ nickname, color }) => {
     users[socket.id] = { nickname, color };
-    if (!hostId) hostId = socket.id;
-    io.emit("user list", users); // 전체 유저 상태 broadcast
-    socket.emit("userId", socket.id); // 본인 socketId 프론트로 전달
+    if (!hostId) hostId = socket.id; // 유저 한 명일 때는 무조건 방장
+    sendUserList();
+    socket.emit("userId", socket.id);
     io.emit("user count", Object.keys(users).length);
   });
 
-  // 채팅 메시지 (오직 socket.id, message만)
+  // 채팅 메시지
   socket.on("chat message", (msg) => {
     console.log(`[MSG][${socket.id}]`, msg);
-    // 정답 판정 (아래와 같이 [정답] [문제] 메시지도 system 메시지로 id만 전달)
+
     const user = users[socket.id] || { nickname: "익명", color: "#000" };
     const trimmed = msg.trim().toLowerCase();
     const unsolved = quizHistory.find((q) => !q.solved && trimmed === q.answer);
@@ -35,7 +40,6 @@ io.on("connection", (socket) => {
       unsolved.solved = true;
       scores[socket.id] = (scores[socket.id] || 0) + 1;
 
-      // 시스템 메시지: 오직 senderId와 메시지만!
       io.emit("chat message", {
         senderId: "system",
         message: `[정답] ${user.nickname}님이 [문제${unsolved.id}]의 정답 [${unsolved.answer}]를 맞췄습니다!`,
@@ -52,7 +56,6 @@ io.on("connection", (socket) => {
         .sort((a, b) => b.score - a.score);
       io.emit("quiz leaderboard", leaderboard);
     } else {
-      // 일반 메시지: socket.id만 전달
       io.emit("chat message", { senderId: socket.id, message: msg });
     }
   });
@@ -96,12 +99,41 @@ io.on("connection", (socket) => {
     }, 30 * 1000);
   });
 
+  // 방장 강제 획득 (ex: /방장 커맨드)
+  socket.on("force host", () => {
+    hostId = socket.id;
+    sendUserList();
+  });
+
+  // 방장 위임 (방장만 가능)
+  socket.on("delegate host", (targetId) => {
+    if (socket.id !== hostId) return;
+    if (!users[targetId]) return;
+    hostId = targetId;
+    sendUserList();
+  });
+
+  // 강퇴 (방장만 가능)
+  socket.on("kick user", (targetId) => {
+    if (socket.id !== hostId) return;
+    if (!users[targetId]) return;
+    io.to(targetId).emit("kick");
+    io.sockets.sockets.get(targetId)?.disconnect();
+    // hostId 바뀔 필요는 없음(강퇴당한 유저가 방장이었으면 밑에서 처리)
+  });
+
   // 연결 종료
   socket.on("disconnect", () => {
     delete users[socket.id];
     delete scores[socket.id];
-    if (hostId === socket.id) hostId = Object.keys(users)[0] || null;
-    io.emit("user list", users);
+    // 방장 퇴장 시 다음 유저에게 방장 자동 위임
+    if (hostId === socket.id) {
+      hostId = Object.keys(users)[0] || null;
+      sendUserList();
+    } else {
+      // 다른 유저 퇴장 시에도 hostId 재전송(프론트 sync 위해)
+      sendUserList();
+    }
     io.emit("user count", Object.keys(users).length);
   });
 });
