@@ -26,58 +26,10 @@ io.on("connection", (socket) => {
     io.emit("user count", Object.keys(users).length);
   });
 
-  // 메시지 전송
+  // "chat message" 이벤트 단일 처리!
   socket.on("chat message", (msg) => {
     console.log(`[MSG][${socket.id}]`, msg);
-    io.emit("chat message", { senderId: socket.id, message: msg });
-  });
 
-  // 퀴즈 출제 (방장만)
-  socket.on("quiz new", ({ question, answer }) => {
-    if (socket.id !== hostId) return;
-    quizCounter += 1;
-    const quiz = {
-      id: quizCounter,
-      question,
-      answer: answer.trim().toLowerCase(),
-      solved: false,
-      createdAt: Date.now(),
-      timeout: Date.now() + 30 * 1000,
-    };
-    quizHistory.push(quiz);
-
-    io.emit("chat message", {
-      senderId: "system",
-      message: `[문제${quiz.id}] ${question}`,
-    });
-
-    io.emit(
-      "active quizzes",
-      quizHistory
-        .filter((q) => !q.solved)
-        .map((q) => ({
-          ...q,
-          // 불필요한 필드도 프론트 참고용 포함
-        }))
-    );
-
-    setTimeout(() => {
-      if (!quiz.solved) {
-        quiz.solved = true;
-        io.emit("chat message", {
-          senderId: "system",
-          message: `[문제${quiz.id}] 시간 초과! 정답: ${quiz.answer}`,
-        });
-        io.emit(
-          "active quizzes",
-          quizHistory.filter((q) => !q.solved)
-        );
-      }
-    }, 30 * 1000);
-  });
-
-  // 정답 판정
-  socket.on("chat message", (msg) => {
     const user = users[socket.id] || { nickname: "익명", color: "#000" };
     const trimmed = msg.trim().toLowerCase();
     const unsolved = quizHistory.find((q) => !q.solved && trimmed === q.answer);
@@ -106,7 +58,44 @@ io.on("connection", (socket) => {
     }
   });
 
-  // 방장 위임, 강퇴 등 필요시 추가
+  // 퀴즈 출제 (방장만)
+  socket.on("quiz new", ({ question, answer }) => {
+    if (socket.id !== hostId) return;
+    quizCounter += 1;
+    const quiz = {
+      id: quizCounter,
+      question,
+      answer: answer.trim().toLowerCase(),
+      solved: false,
+      createdAt: Date.now(),
+      timeout: Date.now() + 30 * 1000,
+    };
+    quizHistory.push(quiz);
+
+    io.emit("chat message", {
+      senderId: "system",
+      message: `[문제${quiz.id}] ${question}`,
+    });
+
+    io.emit(
+      "active quizzes",
+      quizHistory.filter((q) => !q.solved)
+    );
+
+    setTimeout(() => {
+      if (!quiz.solved) {
+        quiz.solved = true;
+        io.emit("chat message", {
+          senderId: "system",
+          message: `[문제${quiz.id}] 시간 초과! 정답: ${quiz.answer}`,
+        });
+        io.emit(
+          "active quizzes",
+          quizHistory.filter((q) => !q.solved)
+        );
+      }
+    }, 30 * 1000);
+  });
 
   // 연결 종료
   socket.on("disconnect", () => {
