@@ -10,46 +10,31 @@ const io = new Server(server, {
   },
 });
 
-let users = {}; // socket.id -> {nickname, color}
-let scores = {}; // nickname -> score
-let bannedNicknames = new Set();
+let users = {}; // socket.id -> { nickname, color }
+let scores = {}; // socket.id -> 점수
+let quizHistory = []; // {id, question, answer, solved, ...}
+let quizCounter = 0;
 let hostId = null;
 
-let quizHistory = [];
-let quizCounter = 0;
-
 io.on("connection", (socket) => {
-  const sendUserList = () => {
-    io.emit("user list", {
-      users: Object.values(users),
-      hostNickname: users[hostId]?.nickname || null,
-    });
-  };
-
-  // 닉네임 설정
+  // 닉네임/색상 설정 및 초기화
   socket.on("set nickname", ({ nickname, color }) => {
-    /*if (bannedNicknames.has(nickname)) {
-      socket.emit("banned", "해당 닉네임은 차단되었습니다.");
-      socket.disconnect();
-      return;
-    }
-    */
     users[socket.id] = { nickname, color };
-
-    // 방장 지정
-    if (!hostId) {
-      hostId = socket.id;
-    }
-    socket.emit("host status", { isHost: socket.id === hostId });
-
-    sendUserList();
+    if (!hostId) hostId = socket.id;
+    io.emit("user list", users);
+    socket.emit("userId", socket.id);
     io.emit("user count", Object.keys(users).length);
   });
 
-  // 퀴즈 출제
+  // 메시지 전송
+  socket.on("chat message", (msg) => {
+    console.log(`[MSG][${socket.id}]`, msg);
+    io.emit("chat message", { senderId: socket.id, message: msg });
+  });
+
+  // 퀴즈 출제 (방장만)
   socket.on("quiz new", ({ question, answer }) => {
     if (socket.id !== hostId) return;
-
     quizCounter += 1;
     const quiz = {
       id: quizCounter,
@@ -62,24 +47,25 @@ io.on("connection", (socket) => {
     quizHistory.push(quiz);
 
     io.emit("chat message", {
-      nickname: `[문제${quiz.id}]`,
-      color: "#d9534f",
-      message: question,
+      senderId: "system",
+      message: `[문제${quiz.id}] ${question}`,
     });
 
-    // 현재 미해결 문제 목록 전송
     io.emit(
       "active quizzes",
-      quizHistory.filter((q) => !q.solved)
+      quizHistory
+        .filter((q) => !q.solved)
+        .map((q) => ({
+          ...q,
+          // 불필요한 필드도 프론트 참고용 포함
+        }))
     );
 
-    // 타이머 종료 처리
     setTimeout(() => {
       if (!quiz.solved) {
         quiz.solved = true;
         io.emit("chat message", {
-          nickname: "[시스템]",
-          color: "#888",
+          senderId: "system",
           message: `[문제${quiz.id}] 시간 초과! 정답: ${quiz.answer}`,
         });
         io.emit(
@@ -90,30 +76,18 @@ io.on("connection", (socket) => {
     }, 30 * 1000);
   });
 
-  // 채팅 메시지
+  // 정답 판정
   socket.on("chat message", (msg) => {
-    const user = users[socket.id] || { nickname: "익명", color: "#000000" };
+    const user = users[socket.id] || { nickname: "익명", color: "#000" };
     const trimmed = msg.trim().toLowerCase();
-
-    // /방장 → 방장 강제 요청
-    if (msg.trim() === "/방장") {
-      hostId = socket.id;
-      io.to(socket.id).emit("host status", { isHost: true });
-      sendUserList();
-      return;
-    }
-
-    // 정답 처리
     const unsolved = quizHistory.find((q) => !q.solved && trimmed === q.answer);
     if (unsolved) {
       unsolved.solved = true;
-      scores[user.nickname] = (scores[user.nickname] || 0) + 1;
+      scores[socket.id] = (scores[socket.id] || 0) + 1;
 
-      io.emit("quiz correct", {
-        nickname: user.nickname,
-        color: user.color,
-        answer: unsolved.answer,
-        questionId: unsolved.id,
+      io.emit("chat message", {
+        senderId: "system",
+        message: `[정답] ${user.nickname}님이 문제${unsolved.id}의 정답 "${unsolved.answer}"를 맞췄습니다!`,
       });
 
       io.emit(
@@ -121,67 +95,25 @@ io.on("connection", (socket) => {
         quizHistory.filter((q) => !q.solved)
       );
 
-      // 순위 정렬
-      const ranks = Object.entries(scores)
-        .map(([name, score]) => ({ name, score }))
-        .sort((a, b) => b.score - a.score)
-        .map((entry, i, arr) => {
-          const same = arr.filter((e) => e.score === entry.score).length;
-          return { ...entry, rank: same > 1 ? "공동" : i + 1 };
-        });
-
-      io.emit("quiz leaderboard", ranks);
+      // 랭킹 송신 (점수로 정렬)
+      const leaderboard = Object.entries(scores)
+        .map(([sid, score]) => ({ sid, score }))
+        .sort((a, b) => b.score - a.score);
+      io.emit("quiz leaderboard", leaderboard);
     } else {
-      io.emit("chat message", {
-        nickname: user.nickname,
-        color: user.color,
-        message: msg,
-      });
+      // 정답 아니면 일반 채팅 메시지로
+      io.emit("chat message", { senderId: socket.id, message: msg });
     }
   });
 
-  // 유저 킥
-  socket.on("kick user", (targetNickname) => {
-    if (socket.id !== hostId) return;
-
-    const targetId = Object.entries(users).find(
-      ([id, u]) => u.nickname === targetNickname
-    )?.[0];
-    if (targetId) {
-      bannedNicknames.add(targetNickname);
-      io.to(targetId).emit("kick");
-      io.sockets.sockets.get(targetId)?.disconnect();
-    }
-  });
-
-  // 방장 위임
-  socket.on("delegate host", (targetNickname) => {
-    if (socket.id !== hostId) return;
-
-    const targetId = Object.entries(users).find(
-      ([id, u]) => u.nickname === targetNickname
-    )?.[0];
-    if (targetId) {
-      hostId = targetId;
-      io.to(targetId).emit("host status", { isHost: true });
-      sendUserList();
-    }
-  });
-
-  // 강제 방장 가져오기
-  socket.on("force host", () => {
-    hostId = socket.id;
-    io.to(socket.id).emit("host status", { isHost: true });
-    sendUserList();
-  });
+  // 방장 위임, 강퇴 등 필요시 추가
 
   // 연결 종료
   socket.on("disconnect", () => {
     delete users[socket.id];
-    if (socket.id === hostId) {
-      hostId = Object.keys(users)[0] || null;
-    }
-    sendUserList();
+    delete scores[socket.id];
+    if (hostId === socket.id) hostId = Object.keys(users)[0] || null;
+    io.emit("user list", users);
     io.emit("user count", Object.keys(users).length);
   });
 });
