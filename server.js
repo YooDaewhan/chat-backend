@@ -1,6 +1,8 @@
 const express = require("express");
 const http = require("http");
 const { Server } = require("socket.io");
+const multer = require("multer");
+const path = require("path");
 
 const app = express();
 const server = http.createServer(app);
@@ -8,6 +10,33 @@ const io = new Server(server, {
   cors: { origin: "*" },
 });
 
+// ========== 이미지 업로드 설정 ==========
+const upload = multer({
+  dest: "uploads/",
+  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB 제한
+  fileFilter: (req, file, cb) => {
+    // 이미지 파일만 허용
+    if (!file.mimetype.startsWith("image/")) {
+      return cb(new Error("이미지 파일만 업로드 가능합니다."), false);
+    }
+    cb(null, true);
+  },
+});
+
+// 업로드 폴더 static 서빙
+app.use("/uploads", express.static(path.join(__dirname, "uploads")));
+
+// 이미지 업로드 라우터
+app.post("/upload", upload.single("image"), (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ error: "파일이 없습니다." });
+  }
+  // 업로드된 이미지 접근 경로 반환
+  const imageUrl = `/uploads/${req.file.filename}`;
+  res.json({ url: imageUrl });
+});
+
+// ========== 채팅 소켓 ==========
 let users = {}; // socket.id -> { nickname, color }
 let scores = {}; // socket.id -> 점수
 let quizHistory = []; // {id, question, answer, solved, ...}
@@ -23,7 +52,7 @@ io.on("connection", (socket) => {
   // 닉네임/색상 설정 및 최초 입장
   socket.on("set nickname", ({ nickname, color }) => {
     users[socket.id] = { nickname, color };
-    if (!hostId) hostId = socket.id; // 유저 한 명일 때는 무조건 방장
+    if (!hostId) hostId = socket.id;
     sendUserList();
     socket.emit("userId", socket.id);
     io.emit("user count", Object.keys(users).length);
@@ -32,6 +61,15 @@ io.on("connection", (socket) => {
   // 채팅 메시지
   socket.on("chat message", (msg) => {
     console.log(`[MSG][${socket.id}]`, msg);
+
+    // 이미지는 문자열로 URL만 받음 (프론트에서 전송)
+    if (
+      typeof msg === "string" &&
+      (msg.startsWith("/uploads/") || msg.startsWith("http"))
+    ) {
+      io.emit("chat message", { senderId: socket.id, message: msg });
+      return;
+    }
 
     const user = users[socket.id] || { nickname: "익명", color: "#000" };
     const trimmed = msg.trim().toLowerCase();
@@ -50,7 +88,6 @@ io.on("connection", (socket) => {
         quizHistory.filter((q) => !q.solved)
       );
 
-      // 랭킹: 오직 socket.id만 포함
       const leaderboard = Object.entries(scores)
         .map(([sid, score]) => ({ sid, score }))
         .sort((a, b) => b.score - a.score);
@@ -119,19 +156,16 @@ io.on("connection", (socket) => {
     if (!users[targetId]) return;
     io.to(targetId).emit("kick");
     io.sockets.sockets.get(targetId)?.disconnect();
-    // hostId 바뀔 필요는 없음(강퇴당한 유저가 방장이었으면 밑에서 처리)
   });
 
   // 연결 종료
   socket.on("disconnect", () => {
     delete users[socket.id];
     delete scores[socket.id];
-    // 방장 퇴장 시 다음 유저에게 방장 자동 위임
     if (hostId === socket.id) {
       hostId = Object.keys(users)[0] || null;
       sendUserList();
     } else {
-      // 다른 유저 퇴장 시에도 hostId 재전송(프론트 sync 위해)
       sendUserList();
     }
     io.emit("user count", Object.keys(users).length);
