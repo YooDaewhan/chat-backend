@@ -39,7 +39,7 @@ io.on("connection", (socket) => {
 
       io.emit("chat message", {
         senderId: "system",
-        message: `[정답] ${user.nickname}님이 문제[${unsolved.id}]의 정답[${unsolved.answer}]를 맞췄습니다!`,
+        message: `[정답] ${user.nickname}님이 [문제${unsolved.id}]의 정답 [${unsolved.answer}]"를 맞췄습니다!`,
       });
 
       io.emit(
