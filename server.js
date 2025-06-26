@@ -196,6 +196,32 @@ app.post("/api/register", async (req, res) => {
   }
 });
 
+app.post("/api/login", async (req, res) => {
+  const { id, password } = req.body;
+
+  if (!id || !password) {
+    return res.status(400).json({ error: "id와 password 필수" });
+  }
+
+  try {
+    const [rows] = await pool.query("SELECT * FROM user WHERE id=? AND pw=?", [
+      id,
+      password,
+    ]);
+
+    if (rows.length === 0) {
+      return res
+        .status(401)
+        .json({ error: "로그인 실패: 아이디 또는 비밀번호 불일치" });
+    }
+
+    res.json({ message: "로그인 성공" });
+  } catch (err) {
+    console.error("DB 로그인 에러:", err);
+    res.status(500).json({ error: "DB 오류" });
+  }
+});
+
 // =========================================
 
 const PORT = process.env.PORT || 3001;
