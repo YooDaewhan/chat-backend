@@ -288,6 +288,38 @@ app.get("/api/monsters/detail", async (req, res) => {
     res.status(500).json({ error: "DB 조회 실패" });
   }
 });
+
+app.get("/api/monsters/detail", async (req, res) => {
+  const { uid, name } = req.query;
+  if (!uid || !name) return res.status(400).json({ error: "uid, name 필수" });
+
+  try {
+    const [rows] = await pool.query(
+      "SELECT * FROM monster WHERE uid=? AND name=? LIMIT 1",
+      [uid, name]
+    );
+    if (!rows.length) return res.status(404).json({ error: "몬스터 없음" });
+    res.json(rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: "DB 조회 실패" });
+  }
+});
+
+app.post("/api/story/create", async (req, res) => {
+  const { uid, storyinfo, storytext } = req.body;
+  if (!uid || !storyinfo || !storytext)
+    return res.status(400).json({ error: "필수값 누락" });
+
+  try {
+    await pool.query(
+      "INSERT INTO story (uid, storyinfo, storytext) VALUES (?, ?, ?)",
+      [uid, storyinfo, storytext]
+    );
+    res.json({ message: "스토리 저장 성공" });
+  } catch (err) {
+    res.status(500).json({ error: "DB 저장 실패" });
+  }
+});
 // =========================================
 
 const PORT = process.env.PORT || 3001;
