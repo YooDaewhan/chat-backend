@@ -11,7 +11,7 @@ const pool = mysql.createPool({
   host: "ec2-13-125-238-80.ap-northeast-2.compute.amazonaws.com",
   user: "ydh960823", // EC2 DB 계정
   password: "Adbtmddyd2!", // EC2 DB 비번
-  database: "chat-api", // DB명
+  database: "noble", // DB명
   port: 3306,
   ssl: false,
 });
