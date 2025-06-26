@@ -250,7 +250,24 @@ app.get("/api/monsters/my", async (req, res) => {
     res.status(500).json({ error: "DB 조회 실패" });
   }
 });
+app.post("/api/monsters/create", async (req, res) => {
+  const { uid, name, kind, info, skil1, skil2, skil3, skil4 } = req.body;
 
+  if (!uid || !name || !kind || !info) {
+    return res.status(400).json({ error: "필수값 누락" });
+  }
+
+  try {
+    const [result] = await pool.query(
+      "INSERT INTO monster (uid, name, kind, info, skil1, skil2, skil3, skil4) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+      [uid, name, kind, info, skil1, skil2, skil3, skil4]
+    );
+    res.json({ message: "몬스터 생성 성공", result });
+  } catch (err) {
+    console.error("몬스터 생성 실패:", err);
+    res.status(500).json({ error: "DB 저장 실패: " + err.message });
+  }
+});
 // =========================================
 
 const PORT = process.env.PORT || 3001;
