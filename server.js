@@ -224,7 +224,7 @@ app.post("/api/login", async (req, res) => {
 
 app.get("/api/monsters/all", async (req, res) => {
   try {
-    const [rows] = await pool.query("SELECT uid, name FROM monster");
+    const [rows] = await pool.query("SELECT uid, name, mid FROM monster");
     res.json(rows);
   } catch (err) {
     console.error("전체 몬스터 조회 실패:", err);
