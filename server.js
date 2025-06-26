@@ -268,6 +268,26 @@ app.post("/api/monsters/create", async (req, res) => {
     res.status(500).json({ error: "DB 저장 실패: " + err.message });
   }
 });
+app.get("/api/monsters/detail", async (req, res) => {
+  const mid = req.query.mid;
+
+  if (!mid) {
+    return res.status(400).json({ error: "mid 파라미터 필요" });
+  }
+
+  try {
+    const [rows] = await pool.query("SELECT * FROM monster WHERE mid = ?", [
+      mid,
+    ]);
+    if (rows.length === 0) {
+      return res.status(404).json({ error: "해당 몬스터 없음" });
+    }
+    res.json(rows[0]);
+  } catch (err) {
+    console.error("몬스터 상세 조회 실패:", err);
+    res.status(500).json({ error: "DB 조회 실패" });
+  }
+});
 // =========================================
 
 const PORT = process.env.PORT || 3001;
