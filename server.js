@@ -222,6 +222,35 @@ app.post("/api/login", async (req, res) => {
   }
 });
 
+app.get("/api/monsters/all", async (req, res) => {
+  try {
+    const [rows] = await pool.query("SELECT uid, name FROM monster");
+    res.json(rows);
+  } catch (err) {
+    console.error("전체 몬스터 조회 실패:", err);
+    res.status(500).json({ error: "DB 조회 실패" });
+  }
+});
+
+app.get("/api/monsters/my", async (req, res) => {
+  const userId = req.query.id;
+
+  if (!userId) {
+    return res.status(400).json({ error: "id 파라미터가 필요합니다." });
+  }
+
+  try {
+    const [rows] = await pool.query(
+      "SELECT m.uid, m.name FROM user_monster um JOIN monster m ON um.monster_uid = m.uid WHERE um.user_id = ?",
+      [userId]
+    );
+    res.json(rows);
+  } catch (err) {
+    console.error("내 몬스터 조회 실패:", err);
+    res.status(500).json({ error: "DB 조회 실패" });
+  }
+});
+
 // =========================================
 
 const PORT = process.env.PORT || 3001;
