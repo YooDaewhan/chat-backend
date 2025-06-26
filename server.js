@@ -241,7 +241,7 @@ app.get("/api/monsters/my", async (req, res) => {
 
   try {
     const [rows] = await pool.query(
-      "SELECT uid, name FROM monster WHERE uid = ?",
+      "SELECT uid, name ,mid FROM monster WHERE uid = ?",
       [userId]
     );
     res.json(rows);
