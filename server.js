@@ -1,23 +1,35 @@
+// 기존 코드 ======================
 const express = require("express");
 const cors = require("cors");
 const http = require("http");
 const { Server } = require("socket.io");
 const multer = require("multer");
 const path = require("path");
+const mysql = require("mysql2/promise");
+// DB 커넥션 풀 설정
+const pool = mysql.createPool({
+  host: "ec2-13-125-238-80.ap-northeast-2.compute.amazonaws.com",
+  user: "ydh960823", // EC2 DB 계정
+  password: "Adbtmddyd2!", // EC2 DB 비번
+  database: "chat-api", // DB명
+  port: 3306,
+  ssl: false,
+});
 
 const app = express();
 const server = http.createServer(app);
 app.use(cors({ origin: "*" }));
+app.use(express.json()); // JSON POST 받을 때 필수
+
 const io = new Server(server, {
   cors: { origin: "*" },
 });
 
-// ========== 이미지 업로드 설정 ==========
+// 이미지 업로드 설정 ==================
 const upload = multer({
   dest: "uploads/",
-  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB 제한
+  limits: { fileSize: 5 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
-    // 이미지 파일만 허용
     if (!file.mimetype.startsWith("image/")) {
       return cb(new Error("이미지 파일만 업로드 가능합니다."), false);
     }
@@ -25,23 +37,20 @@ const upload = multer({
   },
 });
 
-// 업로드 폴더 static 서빙
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
-// 이미지 업로드 라우터
 app.post("/upload", upload.single("image"), (req, res) => {
   if (!req.file) {
     return res.status(400).json({ error: "파일이 없습니다." });
   }
-  // 업로드된 이미지 접근 경로 반환
   const imageUrl = `/uploads/${req.file.filename}`;
   res.json({ url: imageUrl });
 });
 
-// ========== 채팅 소켓 ==========
-let users = {}; // socket.id -> { nickname, color }
-let scores = {}; // socket.id -> 점수
-let quizHistory = []; // {id, question, answer, solved, ...}
+// 소켓 ==============================
+let users = {};
+let scores = {};
+let quizHistory = [];
 let quizCounter = 0;
 let hostId = null;
 
@@ -51,7 +60,6 @@ function sendUserList() {
 }
 
 io.on("connection", (socket) => {
-  // 닉네임/색상 설정 및 최초 입장
   socket.on("set nickname", ({ nickname, color }) => {
     users[socket.id] = { nickname, color };
     if (!hostId) hostId = socket.id;
@@ -60,11 +68,9 @@ io.on("connection", (socket) => {
     io.emit("user count", Object.keys(users).length);
   });
 
-  // 채팅 메시지
   socket.on("chat message", (msg) => {
     console.log(`[MSG][${socket.id}]`, msg);
 
-    // 이미지는 문자열로 URL만 받음 (프론트에서 전송)
     if (
       typeof msg === "string" &&
       (msg.startsWith("/uploads/") || msg.startsWith("http"))
@@ -99,7 +105,6 @@ io.on("connection", (socket) => {
     }
   });
 
-  // 퀴즈 출제 (방장만)
   socket.on("quiz new", ({ question, answer }) => {
     if (socket.id !== hostId) return;
     quizCounter += 1;
@@ -138,13 +143,11 @@ io.on("connection", (socket) => {
     }, 30 * 1000);
   });
 
-  // 방장 강제 획득 (ex: /방장 커맨드)
   socket.on("force host", () => {
     hostId = socket.id;
     sendUserList();
   });
 
-  // 방장 위임 (방장만 가능)
   socket.on("delegate host", (targetId) => {
     if (socket.id !== hostId) return;
     if (!users[targetId]) return;
@@ -152,7 +155,6 @@ io.on("connection", (socket) => {
     sendUserList();
   });
 
-  // 강퇴 (방장만 가능)
   socket.on("kick user", (targetId) => {
     if (socket.id !== hostId) return;
     if (!users[targetId]) return;
@@ -160,7 +162,6 @@ io.on("connection", (socket) => {
     io.sockets.sockets.get(targetId)?.disconnect();
   });
 
-  // 연결 종료
   socket.on("disconnect", () => {
     delete users[socket.id];
     delete scores[socket.id];
@@ -174,6 +175,30 @@ io.on("connection", (socket) => {
   });
 });
 
-server.listen(3001, () => {
-  console.log("✅ 서버 실행 중: http://localhost:3001");
+// ✅ 여기부터 회원가입 API 추가 ===================
+app.post("/api/register", async (req, res) => {
+  const { id, password } = req.body;
+
+  if (!id || !password) {
+    return res.status(400).json({ error: "id와 password는 필수입니다." });
+  }
+
+  try {
+    const [result] = await pool.query(
+      "INSERT INTO user (id, pw) VALUES (?, ?)",
+      [id, password]
+    );
+
+    res.json({ message: "회원가입 성공", result });
+  } catch (err) {
+    console.error("DB 저장 실패:", err);
+    res.status(500).json({ error: "DB 저장 실패: " + err.message });
+  }
+});
+
+// =========================================
+
+const PORT = process.env.PORT || 3001;
+server.listen(PORT, () => {
+  console.log(`✅ 서버 실행 중: 포트 ${PORT}`);
 });
