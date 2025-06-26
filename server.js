@@ -290,17 +290,19 @@ app.get("/api/monsters/detail", async (req, res) => {
 });
 
 app.get("/api/monsters/detail", async (req, res) => {
-  const { uid, name } = req.query;
-  if (!uid || !name) return res.status(400).json({ error: "uid, name 필수" });
+  const { mid } = req.query;
+  if (!mid) return res.status(400).json({ error: "mid 파라미터 필요" });
 
   try {
-    const [rows] = await pool.query(
-      "SELECT * FROM monster WHERE uid=? AND name=? LIMIT 1",
-      [uid, name]
-    );
-    if (!rows.length) return res.status(404).json({ error: "몬스터 없음" });
+    const [rows] = await pool.query("SELECT * FROM monster WHERE mid = ?", [
+      mid,
+    ]);
+    if (rows.length === 0) {
+      return res.status(404).json({ error: "해당 몬스터 없음" });
+    }
     res.json(rows[0]);
   } catch (err) {
+    console.error("몬스터 상세 조회 실패:", err);
     res.status(500).json({ error: "DB 조회 실패" });
   }
 });
