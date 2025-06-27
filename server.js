@@ -250,7 +250,20 @@ app.get("/api/monsters/my", async (req, res) => {
   }
 });
 app.post("/api/monsters/create", async (req, res) => {
-  const { uid, name, kind, info, skil1, skil2, skil3, skil4 } = req.body;
+  const {
+    uid,
+    name,
+    kind,
+    info,
+    skil1name,
+    skil1,
+    skil2name,
+    skil2,
+    skil3name,
+    skil3,
+    skil4name,
+    skil4,
+  } = req.body;
 
   if (!uid || !name || !kind || !info) {
     return res.status(400).json({ error: "필수값 누락" });
@@ -258,8 +271,8 @@ app.post("/api/monsters/create", async (req, res) => {
 
   try {
     const [result] = await pool.query(
-      "INSERT INTO monster (uid, name, kind, info, skil1, skil2, skil3, skil4) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-      [uid, name, kind, info, skil1, skil2, skil3, skil4]
+      "INSERT INTO monster (uid, name, kind, info,skil1name, skil1name, skil1,skil2name, skil2, skil3name, skil3,skil4name, skil4) VALUES (?, ?, ?, ?, ?, ?, ?, ?,?,?,?,?)",
+      [uid, name, kind, info, skil1name, skil1, skil2, skil3, skil4]
     );
     res.json({ message: "몬스터 생성 성공", result });
   } catch (err) {
