@@ -319,6 +319,7 @@ app.post("/api/story/create", async (req, res) => {
     );
     res.json({ message: "스토리 저장 성공" });
   } catch (err) {
+    console.error("스토리 저장 실패:", err);
     res.status(500).json({ error: "DB 저장 실패" });
   }
 });
